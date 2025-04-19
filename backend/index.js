@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const docxToPDF = require("docx-pdf");
@@ -14,8 +15,9 @@ app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const uploadDir = path.join(__dirname, "upload");
-const outputDir = path.join(__dirname, "files");
+const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, "upload");
+const outputDir = process.env.OUTPUT_DIR || path.join(__dirname, "files");
+
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
@@ -39,7 +41,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 }
+    limits: { fileSize: 5 * 1024 * 1024 } // 5 MB limit
 });
 
 app.post("/convertFile", upload.single("file"), (req, res) => {
@@ -62,12 +64,26 @@ app.post("/convertFile", upload.single("file"), (req, res) => {
             }
 
             console.log("File successfully sent:", outputPath);
-            fs.unlink(req.file.path, () => {});
-            fs.unlink(outputPath, () => {});
+
+            fs.unlink(req.file.path, (err) => {
+                if (err) console.error("Failed to delete uploaded DOCX:", err);
+            });
+            fs.unlink(outputPath, (err) => {
+                if (err) console.error("Failed to delete converted PDF:", err);
+            });
         });
     });
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
+});
+
+// Global error handlers
+process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+    console.error("Uncaught Exception:", err);
+    process.exit(1);
 });
