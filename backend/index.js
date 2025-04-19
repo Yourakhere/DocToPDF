@@ -1,53 +1,73 @@
 const express = require("express");
-const multer = require("multer"); 
+const multer = require("multer");
 const docxToPDF = require("docx-pdf");
 const path = require("path");
+const fs = require("fs");
 const cors = require("cors");
+const helmet = require("helmet");
+
 const app = express();
-const port = 3000;
- 
+const PORT = process.env.PORT || 3000;
+
 app.use(cors());
+app.use(helmet());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const uploadDir = path.join(__dirname, "upload");
+const outputDir = path.join(__dirname, "files");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+
 const storage = multer.diskStorage({
-    destination: function(req, file, cb) {
-        cb(null, "upload");
+    destination: function (req, file, cb) {
+        cb(null, uploadDir);
     },
-    filename: function(req, file, cb) {
-        cb(null, file.originalname);
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_"));
     },
 });
 
-const upload = multer({ storage: storage });
-app.post("/convertFile", upload.single("file"), (req, res, next) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({
-                message: "No file  uploaded",
-            });
-        } 
-        let outputPath = path.join(
-            __dirname,
-            "files",
-            `${req.file.originalname}.pdf`
-        );
-        docxToPDF(req.file.path, outputPath, (err, result) => {
-            if (err) {
-                console.log(err);
-                return res.status(500).json({
-                    message: "Error converting docx to pdf",
-                });
-            }
-            res.download(outputPath, () => {
-                console.log("file downloaded");
-            });
-        });
-    } catch (error) {
-        console.log(error);
-        res.status(500).json({
-            message: "Internal server error",
-        });
+const fileFilter = (req, file, cb) => {
+    if (file.mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        cb(null, true);
+    } else {
+        cb(new Error("Only .docx files are allowed"), false);
     }
+};
+
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-app.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
+app.post("/convertFile", upload.single("file"), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: "No valid file uploaded" });
+    }
+
+    const outputPath = path.join(outputDir, `${path.parse(req.file.filename).name}.pdf`);
+
+    docxToPDF(req.file.path, outputPath, (err) => {
+        if (err) {
+            console.error("Conversion error:", err);
+            return res.status(500).json({ message: "Error converting DOCX to PDF" });
+        }
+
+        res.download(outputPath, (downloadErr) => {
+            if (downloadErr) {
+                console.error("Download error:", downloadErr);
+                return res.status(500).json({ message: "Error sending file" });
+            }
+
+            console.log("File successfully sent:", outputPath);
+            fs.unlink(req.file.path, () => {});
+            fs.unlink(outputPath, () => {});
+        });
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
