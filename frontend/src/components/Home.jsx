@@ -23,7 +23,7 @@ function Home() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await axios.post("http://localhost:3000/convertFile", formData, {
+      const response = await axios.post("https://doc-to-pdf-server.vercel.app/convertFile", formData, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
