@@ -46,7 +46,7 @@ const upload = multer({
 
 app.post("/convertFile", upload.single("file"), (req, res) => {
     if (!req.file) {
-        return res.status(400).json({ message: "No valid file uploaded" });
+        return res.status(400).json({ success: false, error: "NoFile", message: "No valid file uploaded" });
     }
 
     const outputPath = path.join(outputDir, `${path.parse(req.file.filename).name}.pdf`);
@@ -54,35 +54,38 @@ app.post("/convertFile", upload.single("file"), (req, res) => {
     docxToPDF(req.file.path, outputPath, (err) => {
         if (err) {
             console.error("Conversion error:", err);
-            return res.status(500).json({ message: "Error converting DOCX to PDF" });
+            return res.status(500).json({ success: false, error: "ConversionFailed", message: "Error converting DOCX to PDF. Please try again later." });
         }
 
         res.download(outputPath, (downloadErr) => {
             if (downloadErr) {
                 console.error("Download error:", downloadErr);
-                return res.status(500).json({ message: "Error sending file" });
             }
+        });
 
-            console.log("File successfully sent:", outputPath);
-
-            fs.unlink(req.file.path, (err) => {
+        res.on('finish', () => {
+            fs.unlink(req.file.path, err => {
                 if (err) console.error("Failed to delete uploaded DOCX:", err);
             });
-            fs.unlink(outputPath, (err) => {
+            fs.unlink(outputPath, err => {
                 if (err) console.error("Failed to delete converted PDF:", err);
             });
         });
     });
 });
 
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: "OK" });
+});
+
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// Global error handlers
 process.on("unhandledRejection", (reason) => {
     console.error("Unhandled Rejection:", reason);
 });
+
 process.on("uncaughtException", (err) => {
     console.error("Uncaught Exception:", err);
     process.exit(1);
