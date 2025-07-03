@@ -4,8 +4,8 @@ import axios from 'axios';
 
 function Home() { 
   const [selectedFile, setSelectedFile] = useState(null); 
-  const [convert, setConvert] = useState(""); // State for success message
-  const [downloadError, setDownloadError] = useState(""); // State for error message
+  const [convert, setConvert] = useState(""); 
+  const [downloadError, setDownloadError] = useState("");  
   
   const handleFileChange = (e) => {     
     const file = e.target.files[0];
@@ -23,7 +23,7 @@ function Home() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await axios.post("https://doc-to-pdf-server.vercel.app/convertFile", formData, {
+      const response = await axios.post("https://yourakhere-doctopdf.onrender.com", formData, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -33,8 +33,7 @@ function Home() {
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
-
-      // Reset state after successful conversion
+ 
       setSelectedFile(null);
       setConvert('File converted successfully');
       setDownloadError('');
