@@ -4,18 +4,20 @@ import axios from 'axios';
 
 function Home() { 
   const [selectedFile, setSelectedFile] = useState(null); 
-  const [convert, setConvert] = useState(""); 
+  const [message, setMessage] = useState(""); 
   const [downloadError, setDownloadError] = useState("");  
-  
+
   const handleFileChange = (e) => {     
     const file = e.target.files[0];
     setSelectedFile(file); 
+    setMessage('');
+    setDownloadError('');
   };
 
-  const handleSubmit = async(event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!selectedFile){ 
-      setConvert('Please select a file');
+      setMessage('Please select a file');
       return; 
     }
 
@@ -23,27 +25,30 @@ function Home() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await axios.post("https://yourakhere-doctopdf.onrender.com", formData, {
-        responseType: 'blob',
-      });
+      const response = await axios.post(
+        "https://yourakhere-doctopdf.onrender.com/convertFile", 
+        formData, 
+        { responseType: 'blob' }
+      );
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', selectedFile.name.replace(/\.[^/.]+$/, ".pdf"));
       document.body.appendChild(link);
       link.click();
-      link.parentNode.removeChild(link);
+      document.body.removeChild(link);
  
       setSelectedFile(null);
-      setConvert('File converted successfully');
+      setMessage('✅ File converted and downloaded successfully.');
       setDownloadError('');
     } catch (error) {
       console.error(error);
-      if (error.response && error.response.status === 400) {
-        setDownloadError('Error occurred: ' + (error.response.data.message || 'Unknown error'));
+      setMessage('');
+      if (error.response && error.response.data && error.response.data.message) {
+        setDownloadError('❌ ' + error.response.data.message);
       } else {
-        setConvert('');
-        setDownloadError('Unexpected error, please try again.');
+        setDownloadError('❌ Unexpected error, please try again.');
       }
     }
   };
@@ -70,7 +75,7 @@ function Home() {
               className='w-full flex items-center justify-center px-4 py-4 bg-gray-100 text-gray-700 rounded-lg shadow-lg cursor-pointer border-blue-300 hover:bg-blue-700 duration-300 hover:text-white'
             >
               <FaFileWord className='text-2xl mr-3'/>         
-              <span className='text-3xl mr-2'>{selectedFile ? selectedFile.name : "Choose File"}</span>         
+              <span className='text-xl'>{selectedFile ? selectedFile.name : "Choose File"}</span>         
             </label>         
             <button 
               disabled={!selectedFile}  
@@ -79,8 +84,8 @@ function Home() {
             >
               Convert File
             </button>    
-            {convert && (<div className='text-green-500 text-center'>{convert}</div>)}         
-            {downloadError && (<div className='text-red-500 text-center'>{downloadError}</div>)}      
+            {message && <div className='text-green-500 text-center'>{message}</div>}         
+            {downloadError && <div className='text-red-500 text-center'>{downloadError}</div>}      
           </div>        
         </div>        
       </div>       
