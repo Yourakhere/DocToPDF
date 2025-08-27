@@ -1,12 +1,12 @@
 require("dotenv").config();
 
 const express = require("express");
-const multer = require("multer");
-const docxToPDF = require("docx-pdf");
-const path = require("path");
-const fs = require("fs");
 const cors = require("cors");
 const helmet = require("helmet");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const libre = require("libreoffice-convert");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,34 +20,31 @@ app.use(express.urlencoded({ extended: true }));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, "upload");
 const outputDir = process.env.OUTPUT_DIR || path.join(__dirname, "files");
 
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+// Ensure directories exist
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
 // Multer config
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_"));
-  },
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) =>
+    cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_")),
 });
 
 const fileFilter = (req, file, cb) => {
-  if (
+  const isDocxMime =
     file.mimetype ===
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-  ) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only .docx files are allowed"), false);
-  }
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const isDocxExt = path.extname(file.originalname).toLowerCase() === ".docx";
+
+  if (isDocxMime && isDocxExt) return cb(null, true);
+  return cb(new Error("Only .docx files are allowed"), false);
 };
 
 const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
 });
 
 // Routes
@@ -60,37 +57,55 @@ app.post("/convertFile", upload.single("file"), (req, res) => {
     });
   }
 
+  const inputPath = req.file.path;
   const outputPath = path.join(
     outputDir,
     `${path.parse(req.file.filename).name}.pdf`
   );
 
-  docxToPDF(req.file.path, outputPath, (err) => {
+  // Convert DOCX → PDF
+  let docxBuf;
+  try {
+    docxBuf = fs.readFileSync(inputPath);
+  } catch (e) {
+    return res
+      .status(500)
+      .json({ success: false, error: "ReadError", message: "Failed to read uploaded file" });
+  }
+
+  libre.convert(docxBuf, ".pdf", undefined, (err, done) => {
     if (err) {
       console.error("Conversion error:", err);
+      // Cleanup uploaded file
+      try { fs.unlinkSync(inputPath); } catch {}
       return res.status(500).json({
         success: false,
         error: "ConversionFailed",
-        message:
-          "Error converting DOCX to PDF. Please try again later.",
+        message: "Error converting DOCX to PDF. Please try again later.",
       });
     }
 
-    res.download(outputPath, (downloadErr) => {
+    try {
+      fs.writeFileSync(outputPath, done);
+    } catch (writeErr) {
+      console.error("Write error:", writeErr);
+      try { fs.unlinkSync(inputPath); } catch {}
+      return res.status(500).json({
+        success: false,
+        error: "WriteFailed",
+        message: "Failed to write converted PDF.",
+      });
+    }
+
+    // Send the converted file as a download, then cleanup
+    res.download(outputPath, "converted.pdf", (downloadErr) => {
+      // Cleanup local files after sending (or error)
+      try { fs.unlinkSync(inputPath); } catch {}
+      try { fs.unlinkSync(outputPath); } catch {}
       if (downloadErr) {
         console.error("Download error:", downloadErr);
-        return;
+        // Can't send another response here because headers are likely sent
       }
-
-      // Cleanup AFTER response is sent
-      res.once("finish", () => {
-        fs.unlink(req.file.path, (err) => {
-          if (err) console.error("Failed to delete uploaded DOCX:", err);
-        });
-        fs.unlink(outputPath, (err) => {
-          if (err) console.error("Failed to delete converted PDF:", err);
-        });
-      });
     });
   });
 });
@@ -105,11 +120,10 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
-// Error handling
+// Global error logging
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
 });
-
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);
